@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KudiVoice AI · Voice-to-Ledger for Africa</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- Header Banner -->
+    <header class="app-header">
+      <div class="brand-wrapper">
+        <div class="brand-icon">🎙️</div>
+        <div>
+          <div class="brand-title">
+            <span>KudiVoice AI</span>
+            <span class="badge-pill badge-nvidia">⚡ NVIDIA AI Active</span>
+          </div>
+          <p class="brand-subtitle">Voice-to-Ledger &amp; Micro-Credit Profiler for African Merchants</p>
+        </div>
+      </div>
+      <div class="header-status-box">
+        <div class="status-label">Active Merchant</div>
+        <div class="status-merchant">Mama Ngozi Provisions</div>
+        <div class="status-location">📍 Balogun Market, Lagos</div>
+      </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <main class="dashboard-grid">
+
+      <!-- LEFT COLUMN: Voice Input, Extraction & Credit -->
+      <section class="left-column">
+        
+        <!-- Voice Input & Preset Scenarios Card -->
+        <div class="card">
+          <div class="card-title">
+            <span>🎙️ Spoken Transaction Input</span>
+            <span id="record-status" style="font-size: 0.8rem; font-weight: 600;"></span>
+          </div>
+          <p class="card-desc">Speak or tap a realistic Nigerian Pidgin market scenario:</p>
+
+          <!-- 4 1-Click Preset Scenario Chips -->
+          <div class="presets-heading">⚡ 1-Click Nigerian Market Scenarios:</div>
+          <div class="presets-grid" id="presets-grid">
+            <!-- Dynamically populated from presets.js -->
+          </div>
+
+          <!-- Transcript Input Box -->
+          <div class="voice-input-container">
+            <textarea id="voice-input" class="voice-textarea" placeholder="Speak in Nigerian Pidgin or type here..."></textarea>
+          </div>
+
+          <!-- Action Controls -->
+          <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 0.75rem; margin-bottom: 0.5rem;">
+            <button id="btn-record" class="btn-primary" style="background: var(--slate-800);">
+              🎙️ Record Voice
+            </button>
+            <button id="btn-process" class="btn-primary">
+              🚀 Process with NVIDIA NIM
+            </button>
+          </div>
+
+          <!-- Extracted Transaction Review Card (Target Container) -->
+          <div id="extracted-card-container"></div>
+        </div>
+
+        <!-- KudiScore Credit Gauge Card -->
+        <div class="card">
+          <div class="card-title">
+            <span>🏆 KudiScore™ Financial Rating</span>
+          </div>
+          <p class="card-desc">Alternative credit scoring from verified voice transaction velocity.</p>
+
+          <div class="kudiscore-box">
+            <div class="kudiscore-header">Merchant Creditworthiness Score (300 – 850)</div>
+            <div id="kudiscore-val" class="kudiscore-number tabular-num">742</div>
+            <div id="kudiscore-tier" class="kudiscore-tier">⭐ Grade A (Low Risk)</div>
+
+            <div class="kudiscore-details">
+              <div>
+                <small style="color: #94A3B8; text-transform: uppercase; font-size: 0.72rem; font-weight: 700;">Max Working Capital</small>
+                <div class="money" style="font-size: 1.35rem; font-weight: 800; color: #38BDF8;">₦350,000</div>
+                <small style="color: #94A3B8; font-size: 0.72rem;">Kredete Partner Ready</small>
+              </div>
+              <div>
+                <small style="color: #94A3B8; text-transform: uppercase; font-size: 0.72rem; font-weight: 700;">Debt Recovery Rate</small>
+                <div class="money" style="font-size: 1.35rem; font-weight: 800; color: #4ADE80;">91.4%</div>
+                <small style="color: #94A3B8; font-size: 0.72rem;">30-Day Recovery Speed</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- RIGHT COLUMN: Ledger Metrics, Tables, WhatsApp CRM -->
+      <section class="right-column">
+
+        <!-- KPI Metrics Summary Row -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <div class="metric-card-label">Today's Total Sales</div>
+            <div id="metric-total-sales" class="metric-card-val money">₦117,000</div>
+          </div>
+          <div class="metric-card cash">
+            <div class="metric-card-label">Cash Collected</div>
+            <div id="metric-cash-collected" class="metric-card-val money" style="color: #2563EB;">₦107,000</div>
+          </div>
+          <div class="metric-card debt">
+            <div class="metric-card-label">Customer Debts</div>
+            <div id="metric-outstanding-debt" class="metric-card-val money" style="color: var(--warning);">₦57,500</div>
+          </div>
+        </div>
+
+        <!-- Ledger & Debt CRM Card with Tabs -->
+        <div class="card">
+          <nav class="tab-nav">
+            <button class="tab-btn active" data-target="tab-ledger">📋 Live Transaction Ledger</button>
+            <button class="tab-btn" data-target="tab-debts">⚠️ Customer Debts &amp; WhatsApp Reminders</button>
+          </nav>
+
+          <!-- TAB 1: Live Ledger -->
+          <div id="tab-ledger" class="tab-pane">
+            <div class="data-table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Customer / Party</th>
+                    <th>Category</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Cash Paid</th>
+                    <th>Debt Created</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="ledger-tbody">
+                  <!-- Populated dynamically by app.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB 2: Customer Debts & WhatsApp Reminders -->
+          <div id="tab-debts" class="tab-pane" style="display: none;">
+            <p style="font-size: 0.88rem; color: var(--slate-500); margin-bottom: 1rem;">
+              Outstanding customer credit ("buy now, pay later"). Click below to send a polite, localized WhatsApp collection message.
+            </p>
+            <div id="debt-list-container">
+              <!-- Populated dynamically by app.js -->
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/presets.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

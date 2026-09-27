@@ -1,31 +1,34 @@
-# KudiVoice Frontend UI (`frontend/`)
+# KudiVoice Frontend Web Application (`frontend/`)
 
-This directory contains the user interface for **KudiVoice AI**, isolated from backend logic so frontend development proceeds smoothly without merge conflicts.
+A modern, responsive African FinTech single-page web application built with **HTML5, CSS3, and JavaScript**.
 
 ## Directory Structure
 ```
 frontend/
-├── app.py                # Main Streamlit dashboard application
-├── presets.py            # 4 realistic Nigerian Pidgin scenarios & sample ledger state
-├── styles/
-│   └── theme.css         # African FinTech custom styling (Kudi Green + NVIDIA Glow)
-└── components/
-    ├── __init__.py
-    ├── header.py         # Branding and merchant profile
-    ├── voice_dock.py     # Preset scenario chips, transcript box, extraction trigger
-    ├── ledger_view.py    # KPI metrics, transactions table, WhatsApp debt collection links
-    └── credit_card.py    # KudiScore 300-850 gauge, risk tiers, and loan eligibility
+├── index.html        # Main web dashboard interface
+├── css/
+│   └── style.css     # African FinTech design system & animations
+├── js/
+│   ├── presets.js    # 4 realistic Nigerian Pidgin scenarios & sample ledger state
+│   └── app.js        # Reactive client-side application logic & WhatsApp URL generator
+└── README.md
 ```
 
-## Running the Frontend
-From the root of the repository:
+## How to Preview the UI
+
+### Option 1: Direct in Browser (Zero Setup)
+Simply double-click `frontend/index.html` or drag and drop it into Google Chrome.
+
+### Option 2: Live Server or Local Python HTTP Server
+Run a lightweight HTTP server from the project directory:
 ```bash
-streamlit run frontend/app.py
+python -m http.server 8000 --directory frontend
 ```
+Then open: **`http://localhost:8000`**
 
-## Features
-1. **1-Click Nigerian Market Scenarios:** Instant preset buttons (`Mama Chidi`, `Baba Tunde`, `Truck Offload`, `Brother Emeka`) for zero-latency judging demos.
-2. **Extraction Review Card:** Displays item breakdown, cash collected vs. debt created, and spoken Pidgin voiceback confirmation.
-3. **Dynamic Ledger:** Automatically updates today's sales, cash in hand, and customer debt balances upon confirmation.
-4. **1-Click WhatsApp Debt Reminders:** Generates courteous localized WhatsApp payment reminders with one click.
-5. **KudiScore™ Credit Rating:** Explains merchant alternative creditworthiness (300 to 850) for micro-lending partners like Kredete.
+## Interactive Features Included
+1. **1-Click Nigerian Market Scenarios:** Tap any of the 4 scenario chips (`Mama Chidi`, `Baba Tunde`, `Truck Offload`, `Brother Emeka`) to instantly populate realistic Pidgin text.
+2. **AI Extraction Simulation & Preview:** Renders an itemized extraction card showing cash collected vs. debt created, along with a spoken Pidgin confirmation.
+3. **Dynamic Ledger Engine:** Clicking "Confirm & Post to Live Ledger" prepends the new transaction, recalculates total revenue/debts, and dynamically boosts the KudiScore.
+4. **1-Click WhatsApp Collection Links:** Generates pre-filled, courteous Nigerian merchant debt reminders (`https://wa.me/...`).
+5. **KudiScore™ Alternative Credit Gauge:** Displays a visual 300–850 rating with working capital loan limits.
