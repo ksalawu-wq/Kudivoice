@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
+# On Vercel serverless runtime, filesystem is read-only except /tmp
+if os.environ.get("VERCEL") and not os.environ.get("KUDIVOICE_DB"):
+    os.environ["KUDIVOICE_DB"] = "/tmp/kudivoice.db"
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
