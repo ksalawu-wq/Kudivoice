@@ -31,7 +31,7 @@ Kudivoice/
 ├── .env.example          # Safe environment template for teammates
 ├── README.md             # Project documentation & judging guide
 ├── vercel.json           # Turnkey Vercel Edge deployment config
-├── app.py                # Unified server entrypoint & API gateway
+├── api.py                # Unified FastAPI server & REST API (serves frontend + API)
 ├── config.py             # Central configuration reader
 ├── schemas.py            # Pydantic data contracts
 ├── database.py           # Local SQLite ledger engine
@@ -58,7 +58,7 @@ Open `frontend/index.html` in Google Chrome.
 
 ### 2. Run the Full-Stack Server
 ```bash
-python app.py
+python api.py
 ```
 Open **`http://localhost:8000`** in your browser.
 

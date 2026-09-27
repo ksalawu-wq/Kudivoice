@@ -30,12 +30,19 @@ SECURITY NOTES
     as in the Streamlit path (the extractor and DB layer are unchanged).
 """
 
-from __future__ import annotations
+import os
+from pathlib import Path
+
+# On Vercel serverless runtime, filesystem is read-only except /tmp
+if os.environ.get("VERCEL") and not os.environ.get("KUDIVOICE_DB"):
+    os.environ["KUDIVOICE_DB"] = "/tmp/kudivoice.db"
 
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import config
@@ -64,6 +71,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+
+# Mount static CSS & JS assets
+css_dir = FRONTEND_DIR / "css"
+if css_dir.exists():
+    app.mount("/css", StaticFiles(directory=str(css_dir)), name="css")
+
+js_dir = FRONTEND_DIR / "js"
+if js_dir.exists():
+    app.mount("/js", StaticFiles(directory=str(js_dir)), name="js")
+
 
 class ExtractRequest(BaseModel):
     """Body for /extract and /transaction — one raw merchant utterance."""
@@ -86,8 +105,17 @@ def _merchant_id(merchant_id: int | None) -> int:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-@app.get("/")
-def root() -> dict:
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def serve_home():
+    """Serves the Impeccable frontend UI."""
+    index_path = FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return HTMLResponse("<h1>KudiVoice AI API is Running</h1>")
+
+
+@app.get("/health")
+def health() -> dict:
     """Health check + secret-safe provider status (booleans only, never keys)."""
     return {"service": "KudiVoice AI API", "status": "ok",
             "providers": config.secrets_status()}
@@ -130,3 +158,10 @@ def get_score(merchant_id: int | None = None) -> dict:
     """Current KudiScore (300–850), risk grade A/B/C, max-loan NGN, and the full
     explainable breakdown. Returns status='insufficient_data' for new traders."""
     return cs.compute_kudiscore(_merchant_id(merchant_id))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    print(f"🚀 KudiVoice AI server running at: http://localhost:{port}")
+    uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)

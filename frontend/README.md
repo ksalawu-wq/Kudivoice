@@ -22,7 +22,7 @@ Simply double-click `frontend/index.html` or drag and drop it into Google Chrome
 ### Option 2: Run Full-Stack Server
 From the root of the repository:
 ```bash
-python app.py
+python api.py
 ```
 Then open: **`http://localhost:8000`**
 
