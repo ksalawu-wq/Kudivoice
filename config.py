@@ -32,15 +32,17 @@ load_dotenv(_PROJECT_ROOT / ".env", override=False)
 # NOTE: these may be None. We deliberately DO NOT raise at import time so the
 # demo still boots offline; nvidia_extractor falls back to a hardcoded, schema
 # -valid transaction when no key/network is available (see DEMO RESILIENCE).
-NVIDIA_API_KEY: str | None = os.getenv("NVIDIA_API_KEY")
+GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY: str | None = os.getenv("GROQ_API_KEY")
 
 
 # ---------------------------------------------------------------------------
 # Model / endpoint configuration (non-secret — safe to keep in source).
 # ---------------------------------------------------------------------------
-NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1/chat/completions"
-NVIDIA_MODEL: str = "meta/llama-3.3-70b-instruct"
+# Gemini is called through its OpenAI-compatibility layer, so the same
+# requests-based client works for both providers (see nvidia_extractor._call_llm).
+GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GEMINI_MODEL: str = "gemini-3.1-pro"
 
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL: str = "llama-3.3-70b-versatile"
@@ -60,9 +62,9 @@ CURRENCY: str = "NGN"
 CURRENCY_SYMBOL: str = "₦"  # ₦ (escaped so the file stays ASCII-safe on Windows)
 
 
-def has_nvidia_key() -> bool:
-    """True if a NVIDIA NIM key is configured. Never returns the key itself."""
-    return bool(NVIDIA_API_KEY)
+def has_gemini_key() -> bool:
+    """True if a Google Gemini key is configured. Never returns the key itself."""
+    return bool(GEMINI_API_KEY)
 
 
 def has_groq_key() -> bool:
@@ -75,4 +77,4 @@ def secrets_status() -> dict[str, bool]:
     Log/UI-safe summary of which providers are configured.
     Returns booleans ONLY — never the secret values (prevents key leakage).
     """
-    return {"nvidia": has_nvidia_key(), "groq": has_groq_key()}
+    return {"gemini": has_gemini_key(), "groq": has_groq_key()}
