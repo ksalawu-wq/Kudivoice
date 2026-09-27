@@ -3,11 +3,37 @@
  * Enhanced with real-time waveform animation, TTS voice playback, and reactive state.
  */
 
+// ---------------------------------------------------------------------------
+// Live backend (Railway). All calls fall back to mock data on failure so the
+// demo can never break on a cold start or a dropped network.
+// ---------------------------------------------------------------------------
+const API_URL = 'https://kudivoice-production.up.railway.app';
+const API_TIMEOUT_MS = 20000; // generous: survives a Railway cold start
+
+// Thin fetch wrapper — JSON in/out, hard timeout, throws on non-2xx so callers
+// can catch and fall back to mock data.
+async function apiFetch(path, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    try {
+        const res = await fetch(`${API_URL}${path}`, {
+            ...options,
+            headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+            signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`);
+        return await res.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 // Application State
 const state = {
     ledger: [...INITIAL_LEDGER],
     debts: [...INITIAL_DEBTS],
     kudiscore: 742,
+    scoreMeta: null, // {grade, band, maxLoan} from live /score, when available
     activeScenarioKey: "mama_chidi",
     pendingExtraction: null,
     isRecording: false,
@@ -31,6 +57,7 @@ const elements = {
     debtListContainer: document.getElementById("debt-list-container"),
     kudiscoreVal: document.getElementById("kudiscore-val"),
     kudiscoreTier: document.getElementById("kudiscore-tier"),
+    maxLoan: document.getElementById("metric-max-loan"),
     toastContainer: document.getElementById("toast-container")
 };
 
@@ -39,7 +66,8 @@ document.addEventListener("DOMContentLoaded", () => {
     initPresets();
     initWaveformCanvas();
     initEventListeners();
-    renderAll();
+    renderAll();               // instant paint with mock data so the screen is never blank
+    refreshAllFromBackend();   // then replace with live backend data (silent fallback)
 });
 
 // Setup Preset Chips
@@ -165,8 +193,10 @@ function toggleRecording() {
     }
 }
 
-// Process AI Extraction
-function handleProcessAI() {
+// Process AI Extraction — POST the utterance to the live backend (which extracts
+// AND saves), then refresh the whole dashboard from the DB. Falls back to the
+// bundled mock scenario silently if the API is unreachable, so the demo is safe.
+async function handleProcessAI() {
     const rawText = elements.voiceInput.value.trim();
     if (!rawText) {
         showToast("Please enter or record a transaction first.");
@@ -174,27 +204,35 @@ function handleProcessAI() {
     }
 
     elements.btnProcess.disabled = true;
-    elements.btnProcess.innerHTML = "⚡ Extracting with NVIDIA AI Engine...";
+    elements.btnProcess.innerHTML = "⚡ Extracting with KudiVoice AI…";
 
-    setTimeout(() => {
-        let extractedData;
-        if (state.activeScenarioKey && SCENARIOS[state.activeScenarioKey]) {
-            extractedData = SCENARIOS[state.activeScenarioKey].extracted;
-        } else {
-            extractedData = SCENARIOS.mama_chidi.extracted;
-        }
-
-        state.pendingExtraction = extractedData;
-        renderExtractedReceipt(extractedData);
-
+    try {
+        const row = await apiFetch("/transaction", {
+            method: "POST",
+            body: JSON.stringify({ text: rawText }),
+        });
+        // Already extracted + saved server-side: show the receipt, then pull the
+        // authoritative ledger, debts and score so everything reflects the DB.
+        state.pendingExtraction = null;
+        renderExtractedReceipt(backendRowToReceipt(row), true);
+        await refreshAllFromBackend();
+        showToast("⚡ Posted to live ledger via KudiVoice AI");
+    } catch (err) {
+        // Silent fallback — a cold start or network blip must never break the demo.
+        const mock = (SCENARIOS[state.activeScenarioKey] || SCENARIOS.mama_chidi).extracted;
+        state.pendingExtraction = mock;
+        renderExtractedReceipt(mock, false);
+        showToast(`⚡ Extracted via ${mock.engine}`);
+    } finally {
         elements.btnProcess.disabled = false;
-        elements.btnProcess.innerHTML = "🚀 Process with NVIDIA NIM";
-        showToast(`⚡ Extracted via ${extractedData.engine}`);
-    }, 400);
+        elements.btnProcess.innerHTML = "🚀 Process with KudiVoice AI";
+    }
 }
 
-// Render Digital Market POS Receipt Card
-function renderExtractedReceipt(res) {
+// Render Digital Market POS Receipt Card. `alreadyPosted` is true when the row
+// was saved by the live backend (POST /transaction) — the ledger is refreshed
+// separately, so we show a static "Posted" state instead of the Confirm button.
+function renderExtractedReceipt(res, alreadyPosted = false) {
     const isCredit = res.transaction_type === "SALE_WITH_CREDIT";
     const isExpense = res.transaction_type === "EXPENSE";
     const badgeClass = isCredit ? "badge-sale-credit" : (isExpense ? "badge-expense" : "badge-sale-cash");
@@ -238,13 +276,15 @@ function renderExtractedReceipt(res) {
                 <button id="btn-speak" class="btn-speak-audio">🔊 Play Voice</button>
             </div>
 
-            <button id="btn-confirm-post" class="btn-execute-ai" style="width: 100%; border-radius: var(--radius-sm);">
-                ✅ Confirm &amp; Post to Live Ledger
+            <button id="btn-confirm-post" class="btn-execute-ai" style="width: 100%; border-radius: var(--radius-sm); ${alreadyPosted ? 'opacity: 0.85; cursor: default;' : ''}" ${alreadyPosted ? 'disabled' : ''}>
+                ${alreadyPosted ? '✅ Posted to Live Ledger' : '✅ Confirm &amp; Post to Live Ledger'}
             </button>
         </div>
     `;
 
-    document.getElementById("btn-confirm-post").addEventListener("click", confirmAndPostLedger);
+    if (!alreadyPosted) {
+        document.getElementById("btn-confirm-post").addEventListener("click", confirmAndPostLedger);
+    }
 
     const btnSpeak = document.getElementById("btn-speak");
     if (btnSpeak) {
@@ -366,15 +406,142 @@ function renderAll() {
         `;
     }).join("");
 
-    // KudiScore Display
+    // KudiScore Display — prefer the live backend grade/band when available.
     elements.kudiscoreVal.textContent = state.kudiscore;
-    if (state.kudiscore >= 750) {
+    if (state.scoreMeta && state.scoreMeta.grade) {
+        const g = state.scoreMeta.grade;
+        const icon = g === "A" ? "⭐" : g === "B" ? "◆" : "●";
+        elements.kudiscoreTier.textContent = `${icon} Grade ${g} (${state.scoreMeta.band})`;
+        if (elements.maxLoan && typeof state.scoreMeta.maxLoan === "number") {
+            elements.maxLoan.textContent = `₦${state.scoreMeta.maxLoan.toLocaleString()}`;
+        }
+    } else if (state.kudiscore >= 750) {
         elements.kudiscoreTier.textContent = "⭐ Grade A+ (Elite Low Risk)";
     } else if (state.kudiscore >= 700) {
         elements.kudiscoreTier.textContent = "⭐ Grade A (Low Risk)";
     } else {
         elements.kudiscoreTier.textContent = "⭐ Grade B (Moderate Risk)";
     }
+}
+
+// ---------------------------------------------------------------------------
+// Backend integration — map live API rows into the shapes the UI already renders.
+// The backend stores ONE amount per transaction (sale = cash in, credit_sale =
+// debt created, debt_payment = repaid, expense = cash out); we derive the
+// total/paid/debt columns from that so renderAll() keeps working unchanged.
+// ---------------------------------------------------------------------------
+
+const TYPE_LABELS = {
+    sale: "Sale (Cash)",
+    credit_sale: "Sale (Credit)",
+    debt_payment: "Debt Payment",
+    expense: "Expense",
+};
+const TYPE_BADGE_CODES = {
+    sale: "SALE_CASH",
+    credit_sale: "SALE_WITH_CREDIT",
+    debt_payment: "DEBT_RECOVERY",
+    expense: "EXPENSE",
+};
+
+function formatLedgerTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso || "—";
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return sameDay
+        ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : d.toLocaleDateString([], { day: "2-digit", month: "short" });
+}
+
+// One live ledger row -> the object shape renderAll()'s table expects.
+function mapTxnRow(row) {
+    const amt = Number(row.amount_naira) || 0;
+    const isCredit = row.txn_type === "credit_sale";
+    const isCashIn = row.txn_type === "sale" || row.txn_type === "debt_payment";
+    return {
+        id: `tx-${row.id}`,
+        time: formatLedgerTime(row.occurred_at),
+        party: row.counterparty || TYPE_LABELS[row.txn_type] || "—",
+        type: TYPE_LABELS[row.txn_type] || row.txn_type,
+        typeCode: TYPE_BADGE_CODES[row.txn_type] || row.txn_type,
+        items: row.item ? (row.quantity ? `${row.quantity}x ${row.item}` : row.item) : "—",
+        total: amt,
+        paid: isCashIn ? amt : 0,
+        debt: isCredit ? amt : 0,
+        status: isCredit ? "Partial Debt" : "Paid",
+    };
+}
+
+// One /debts row -> the object shape the debt CRM list expects. That endpoint
+// aggregates by customer, so there is no phone/item; we fill sensible defaults
+// (an empty phone opens WhatsApp's contact picker with the message prefilled).
+function mapDebt(d) {
+    const days = Number(d.days_since_activity) || 0;
+    const overdue = days >= 7; // matches the backend's 7-day grace period
+    return {
+        id: `debt-${(d.counterparty || "x").replace(/\s+/g, "-").toLowerCase()}`,
+        customer: d.counterparty || "Customer",
+        phone: "",
+        amount: Number(d.owed_naira) || 0,
+        item: "outstanding balance",
+        due_date: d.last_activity ? formatLedgerTime(d.last_activity) : "—",
+        days_left: overdue ? `${days} days overdue` : `${days} days since activity`,
+        isOverdue: overdue,
+    };
+}
+
+// Short Pidgin confirmation for the receipt card + TTS voiceback.
+function composePidgin(row) {
+    const amt = `₦${(Number(row.amount_naira) || 0).toLocaleString()}`;
+    const who = row.counterparty || "customer";
+    switch (row.txn_type) {
+        case "credit_sale": return `I don record am: ${who} take ${row.item || "goods"} on credit. Balance na ${amt}.`;
+        case "debt_payment": return `Payment received! ${who} pay ${amt}. Account dey balance.`;
+        case "expense": return `Expense recorded: ${amt} pay out${row.item ? ` for ${row.item}` : ""}.`;
+        default: return `Sale complete! ${amt} cash entered${row.counterparty ? ` for ${who}` : ""}.`;
+    }
+}
+
+// A saved /transaction row -> the shape renderExtractedReceipt() expects.
+function backendRowToReceipt(row) {
+    const amt = Number(row.amount_naira) || 0;
+    const isCredit = row.txn_type === "credit_sale";
+    return {
+        party_name: row.counterparty || TYPE_LABELS[row.txn_type] || "—",
+        party_phone: "",
+        transaction_type: TYPE_BADGE_CODES[row.txn_type] || row.txn_type,
+        items: [{ name: row.item || "—", qty: row.quantity || 1 }],
+        total_amount: amt,
+        amount_paid: isCredit ? 0 : amt,
+        debt_amount: isCredit ? amt : 0,
+        pidgin_summary: composePidgin(row),
+        engine: "KudiVoice AI (live)",
+    };
+}
+
+// Loaders: each replaces its slice of state on success, and simply throws (kept
+// silent by the caller's allSettled) on failure so the mock data stays in place.
+async function loadTransactions() {
+    const rows = await apiFetch("/transactions");
+    if (Array.isArray(rows)) state.ledger = rows.map(mapTxnRow);
+}
+async function loadDebts() {
+    const rows = await apiFetch("/debts");
+    if (Array.isArray(rows)) state.debts = rows.map(mapDebt);
+}
+async function loadScore() {
+    const s = await apiFetch("/score");
+    if (s && s.status === "ok" && typeof s.kudiscore === "number") {
+        state.kudiscore = s.kudiscore;
+        state.scoreMeta = { grade: s.risk_grade, band: s.band, maxLoan: s.max_loan_ngn };
+    }
+}
+
+// Pull ledger, debts and score together, then repaint. Used on page load and
+// after every successful POST /transaction.
+async function refreshAllFromBackend() {
+    await Promise.allSettled([loadTransactions(), loadDebts(), loadScore()]);
+    renderAll();
 }
 
 // Toast Notifications
