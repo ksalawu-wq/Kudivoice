@@ -42,7 +42,7 @@ GROQ_API_KEY: str | None = os.getenv("GROQ_API_KEY")
 # Gemini is called through its OpenAI-compatibility layer, so the same
 # requests-based client works for both providers (see nvidia_extractor._call_llm).
 GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-GEMINI_MODEL: str = "gemini-3.1-pro"
+GEMINI_MODEL: str = "gemini-3.1-pro-preview"
 
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL: str = "llama-3.3-70b-versatile"
