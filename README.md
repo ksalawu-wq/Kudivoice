@@ -211,19 +211,23 @@ curl -X POST "http://127.0.0.1:8000/transaction?merchant_id=1" \
 | `text` | body | Required. 1–2000 chars. |
 | `merchant_id` | query | Optional. Defaults to the seeded demo trader. |
 
-**Response** `200 OK` — the saved ledger row
+**Response** `200 OK` — the saved ledger row. Money is stored internally as integer kobo (`amount_kobo`); `amount_naira` is added for convenience. `raw_input` is `null` unless `KUDIVOICE_STORE_RAW=true`.
 ```json
 {
   "id": 7,
   "merchant_id": 1,
   "txn_type": "sale",
-  "amount_naira": 12500.0,
+  "amount_kobo": 1250000,
   "item": "palm oil",
   "quantity": 2.0,
   "counterparty": null,
   "note": null,
   "source": "text",
-  "occurred_at": "2026-09-27T14:05:32"
+  "confidence": 0.9,
+  "raw_input": null,
+  "occurred_at": "2026-09-27T14:05:32",
+  "created_at": "2026-09-27T14:05:32",
+  "amount_naira": 12500.0
 }
 ```
 
@@ -255,25 +259,33 @@ curl "http://127.0.0.1:8000/transactions?merchant_id=1&limit=5"
     "id": 7,
     "merchant_id": 1,
     "txn_type": "sale",
-    "amount_naira": 12500.0,
+    "amount_kobo": 1250000,
     "item": "palm oil",
     "quantity": 2.0,
     "counterparty": null,
     "note": null,
     "source": "text",
-    "occurred_at": "2026-09-27T14:05:32"
+    "confidence": 0.9,
+    "raw_input": null,
+    "occurred_at": "2026-09-27T14:05:32",
+    "created_at": "2026-09-27T14:05:32",
+    "amount_naira": 12500.0
   },
   {
     "id": 6,
     "merchant_id": 1,
     "txn_type": "credit_sale",
-    "amount_naira": 45000.0,
+    "amount_kobo": 4500000,
     "item": "rice",
     "quantity": 3.0,
     "counterparty": "Mama Chidi",
     "note": null,
     "source": "text",
-    "occurred_at": "2026-09-27T14:03:10"
+    "confidence": 0.94,
+    "raw_input": null,
+    "occurred_at": "2026-09-27T14:03:10",
+    "created_at": "2026-09-27T14:03:10",
+    "amount_naira": 45000.0
   }
 ]
 ```
@@ -293,13 +305,15 @@ curl "http://127.0.0.1:8000/debts?merchant_id=1"
 ```json
 [
   {
-    "counterparty": "Mama Chidi",
-    "owed_naira": 45000.0,
-    "days_since_activity": 9
+    "counterparty": "Baba Sule",
+    "owed_naira": 60000.0,
+    "last_activity": "2026-09-06T11:00:00",
+    "days_since_activity": 21
   },
   {
-    "counterparty": "Oga Emeka",
-    "owed_naira": 3000.0,
+    "counterparty": "Mama Chidi",
+    "owed_naira": 15000.0,
+    "last_activity": "2026-09-25T09:00:00",
     "days_since_activity": 2
   }
 ]
@@ -351,7 +365,7 @@ curl "http://127.0.0.1:8000/score?merchant_id=1"
     }
   ],
   "debtors": [
-    { "counterparty": "Mama Chidi", "owed_naira": 45000.0, "days_since_activity": 9 }
+    { "counterparty": "Baba Sule", "owed_naira": 60000.0, "last_activity": "2026-09-06T11:00:00", "days_since_activity": 21 }
   ],
   "summary": {
     "cash_in": 231000.0,
