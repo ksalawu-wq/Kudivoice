@@ -1,5 +1,6 @@
 """
-KudiScore: an explainable 0-100 credit-readiness score built from a trader's own ledger.
+KudiScore: an explainable 300-850 credit-readiness score (FICO-style range) built
+from a trader's own ledger, plus a risk grade (A/B/C) and a max-loan recommendation in NGN.
 
 Design principles (use these in the bias audit / responsible AI section):
   * Uses ONLY ledger behaviour: activity, cash flow, debt collection, stability, record depth.
@@ -38,12 +39,28 @@ LABELS = {
     "stability": "Sales stability",
     "record_depth": "Record history",
 }
-BANDS = [
-    (80, "Strong", "Ready to approach lenders"),
-    (65, "Good", "Close to lender-ready"),
-    (50, "Building", "A few gaps to fix first"),
-    (0, "Early stage", "Keep recording to build your profile"),
+# --- KudiScore scale (Kredete-aligned, FICO-style range) -------------------
+# Components are still weighted out of 100 internally (transparent, easy to
+# audit), then mapped proportionally onto the 300-850 range that lenders expect.
+SCORE_MIN = 300
+SCORE_MAX = 850
+SCORE_SPAN = SCORE_MAX - SCORE_MIN  # 550
+
+# Risk-grade cut-offs on the 300-850 scale:
+#   300-499 -> C (building), 500-699 -> B (moderate), 700-850 -> A (strong)
+GRADES = [
+    (700, "A", "Strong", "Ready to approach lenders"),
+    (500, "B", "Moderate", "Close to lender-ready — a few gaps to close"),
+    (SCORE_MIN, "C", "Building", "Keep recording to strengthen your profile"),
 ]
+
+# Max-loan recommendation: a fraction of ~monthly cash inflow that scales with
+# the score (0.2x at the floor, up to 1.0x at the top). Grounded in the trader's
+# OWN realised cash flow — never demographics — and capped for prudence.
+LOAN_FACTOR_MIN = 0.2
+LOAN_FACTOR_MAX = 1.0
+LOAN_ROUND_NGN = 1_000
+LOAN_CAP_NGN = 2_000_000
 FAIRNESS = {
     "inputs_used": ["transaction dates", "transaction amounts", "transaction types",
                     "debt given and collected"],
@@ -63,11 +80,28 @@ def _scale(value: float, worst: float, best: float) -> float:
     return max(0.0, min(1.0, (value - worst) / (best - worst)))
 
 
-def _band(score: float):
-    for floor, name, message in BANDS:
-        if score >= floor:
-            return name, message
-    return BANDS[-1][1], BANDS[-1][2]
+def _to_kudiscore(fraction: float) -> int:
+    """Map internal achievement (0..1) onto the 300-850 KudiScore range."""
+    return round(SCORE_MIN + max(0.0, min(1.0, fraction)) * SCORE_SPAN)
+
+
+def _grade(kudiscore: float):
+    """Return (grade_letter, band_word, band_message) for a 300-850 score."""
+    for floor, letter, word, message in GRADES:
+        if kudiscore >= floor:
+            return letter, word, message
+    last = GRADES[-1]
+    return last[1], last[2], last[3]
+
+
+def _max_loan_ngn(monthly_cash_in: float, fraction: float) -> int:
+    """Suggested loan ceiling: a score-scaled fraction of monthly cash inflow,
+    rounded to the nearest ₦1,000 and capped for prudence. Uses only the trader's
+    own realised cash flow, so the recommendation is explainable and demographic-free."""
+    factor = LOAN_FACTOR_MIN + (LOAN_FACTOR_MAX - LOAN_FACTOR_MIN) * max(0.0, min(1.0, fraction))
+    amount = max(0.0, monthly_cash_in) * factor
+    amount = round(amount / LOAN_ROUND_NGN) * LOAN_ROUND_NGN
+    return int(min(amount, LOAN_CAP_NGN))
 
 
 def _status(fraction: float) -> str:
@@ -89,14 +123,19 @@ def compute_kudiscore(merchant_id: int, window_days: int = WINDOW_DAYS, now: dat
     }
 
     if len(txns) < MIN_TRANSACTIONS or active_days < MIN_ACTIVE_DAYS:
+        msg = (f"Record at least {MIN_TRANSACTIONS} transactions over {MIN_ACTIVE_DAYS} "
+               f"different days to unlock your KudiScore. You have {len(txns)} across "
+               f"{active_days} day(s).")
         return {
             **base,
             "status": "insufficient_data",
-            "score": None,
+            "kudiscore": None,
+            "score_100": None,
+            "risk_grade": None,
             "band": "Not enough records yet",
-            "band_message": (f"Record at least {MIN_TRANSACTIONS} transactions over {MIN_ACTIVE_DAYS} "
-                             f"different days to get your KudiScore. You have {len(txns)} across "
-                             f"{active_days} day(s)."),
+            "band_message": msg,
+            "max_loan_ngn": 0,
+            "explanation": msg,
             "components": [],
             "recommendations": [],
             "debtors": db.get_outstanding_debts(merchant_id),
@@ -163,8 +202,20 @@ def compute_kudiscore(merchant_id: int, window_days: int = WINDOW_DAYS, now: dat
             "status": _status(frac),
             "metric": metrics[key],
         })
-    score = round(sum(c["points"] for c in components))
-    band, band_message = _band(score)
+    raw = sum(c["points"] for c in components)   # internal 0..100 (weights sum to 100)
+    score_100 = round(raw)
+    kudiscore = _to_kudiscore(raw / 100)
+    grade, band, band_message = _grade(kudiscore)
+
+    # Repayment capacity: normalise window cash-in to a 30-day figure, then size
+    # the recommendation by the score. Only the merchant's own cash flow feeds this.
+    monthly_cash_in = cash_in * (30 / window_days) if window_days else cash_in
+    max_loan = _max_loan_ngn(monthly_cash_in, raw / 100)
+    explanation = (
+        f"KudiScore {kudiscore}/850 — Grade {grade} ({band}). "
+        f"Suggested loan ceiling {_money(max_loan)}, sized to about {_money(monthly_cash_in)} "
+        f"monthly cash flow and your debt-collection record."
+    )
 
     context = {
         "overdue": overdue,
@@ -181,14 +232,19 @@ def compute_kudiscore(merchant_id: int, window_days: int = WINDOW_DAYS, now: dat
     return {
         **base,
         "status": "ok",
-        "score": score,
+        "kudiscore": kudiscore,
+        "score_100": score_100,
+        "risk_grade": grade,
         "band": band,
         "band_message": band_message,
+        "max_loan_ngn": max_loan,
+        "explanation": explanation,
         "components": components,
         "recommendations": recommendations,
         "debtors": debtors,
         "summary": {
             "cash_in": cash_in,
+            "monthly_cash_in": round(monthly_cash_in, 2),
             "expenses": expenses,
             "net_cash": window["net_cash"],
             "outstanding_debt": lifetime["outstanding_debt"],
@@ -231,7 +287,12 @@ def explain_score(result: dict, lang: str = "en") -> str:
     """Markdown summary for the dashboard. lang: 'en' or 'pcm' (Nigerian Pidgin)."""
     if result["status"] != "ok":
         return f"**{result['band']}**\n\n{result['band_message']}"
-    lines = [f"### KudiScore: {result['score']}/100 ({result['band']})", result["band_message"], ""]
+    lines = [
+        f"### KudiScore: {result['kudiscore']}/850 — Grade {result['risk_grade']} ({result['band']})",
+        result["band_message"],
+        f"**Suggested loan ceiling:** {_money(result['max_loan_ngn'])}",
+        "",
+    ]
     for c in result["components"]:
         lines.append(f"- **{c['label']}**: {c['points']}/{c['max_points']} ({c['metric']})")
     if result["recommendations"]:
@@ -286,6 +347,10 @@ if __name__ == "__main__":
             print("rejected:", e)
 
     result = compute_kudiscore(mid)
+    print()
+    print(f"KudiScore={result['kudiscore']}/850  Grade={result['risk_grade']}  "
+          f"MaxLoan={_money(result['max_loan_ngn'])}")
+    print(result["explanation"])
     print()
     print(explain_score(result))
     print()
