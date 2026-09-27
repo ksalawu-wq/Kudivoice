@@ -7,8 +7,8 @@ provider is now Google Gemini, not NVIDIA NIM.)
 Turns a raw merchant utterance (Nigerian Pidgin/English, typed or transcribed)
 into a validated `ExtractedTransaction`. Provider order:
 
-    1. Google Gemini  (gemini-2.5-flash)              — primary
-    2. Groq           (llama-3.3-70b-versatile)       — automatic fallback
+    1. Google Gemini  (see config.GEMINI_MODEL)       — primary
+    2. Groq           (see config.GROQ_MODEL)          — automatic fallback
     3. Hardcoded, schema-valid transaction            — offline demo safety net
 
 Both providers expose an OpenAI-compatible /chat/completions API (Gemini via
@@ -57,25 +57,32 @@ _SYSTEM_PROMPT = """You are KudiVoice, a ledger assistant for Nigerian informal 
 merchants. You convert ONE spoken/typed transaction into STRICT JSON.
 
 NIGERIAN PIDGIN GLOSSARY (apply literally):
-- "carry go" => a CREDIT sale (goods taken now, paid later) => transaction_type "SALE_CREDIT"
-- "balance me" / "don balance me" => the customer is REPAYING a debt => transaction_type "DEBT_RECOVERY"
-- "cash" / "sharp sharp" => paid in full now => transaction_type "SALE_CASH"
-- buying from a supplier / "I buy" => transaction_type "EXPENSE"
-- "k" means thousands of Naira: "45k" = 45000, "20k" = 20000
+- "carry go" / "carry am go" / "collect now pay later" => a CREDIT sale (goods
+  taken now, paid later) => txn_type "credit_sale"
+- "balance me" / "don balance me" / "come pay" => the customer is REPAYING a
+  debt => txn_type "debt_payment"
+- "cash" / "sharp sharp" / "pay complete" => paid in full now => txn_type "sale"
+- buying from a supplier / "I buy" / "restock" / "market" => txn_type "expense"
+- "k" means thousands of Naira: "45k" = 45000, "20k" = 20000. "m" means millions.
 - Units are things like "bags", "cartons", "pcs", "crates". Treat
-  "3 bags of rice" as quantity=3, item_name="rice".
+  "3 bags of rice" as quantity=3, item="rice".
 - Currency is ALWAYS Nigerian Naira (NGN). Never output another currency.
 
 FIELD RULES:
-- transaction_type: one of SALE_CASH, SALE_CREDIT, EXPENSE, DEBT_RECOVERY
-- party_name: the customer or supplier named. If none, use "Unknown".
-- party_phone: digits only, or null if not stated.
-- items: array of {item_name, quantity, unit_price, total_amount} in NGN. May be empty.
-- amount_paid: NGN received NOW (0 for a pure credit sale).
-- debt_amount: NGN still owed (0 for a full cash sale; the repaid figure for DEBT_RECOVERY).
-- due_date: when the debt is due (e.g. "next week"), or null.
+- txn_type: EXACTLY one of "sale", "credit_sale", "debt_payment", "expense".
+- amount: a single NGN number for THIS transaction:
+    * sale         -> cash received now
+    * credit_sale  -> value of the goods taken on credit
+    * debt_payment -> the amount repaid
+    * expense      -> the amount spent
+- item: the main good (e.g. "rice"), or null if none is named.
+- quantity: number of units (e.g. 3), or null if not stated.
+- counterparty: the customer or supplier named. REQUIRED for "credit_sale" and
+  "debt_payment". Use null if genuinely none is stated for a sale/expense.
+- note: a short free-text detail, or null.
+- confidence: your confidence from 0 to 1 that you read the transaction right.
 - pidgin_confirmation: a short friendly Pidgin sentence confirming the record,
-  e.g. "I don record am. Mama Chidi owe 45k for 3 bags of rice."
+  e.g. "I don record am. Mama Chidi carry 3 bags of rice, 45k, she go pay later."
 
 OUTPUT RULES:
 - Respond with a SINGLE JSON object and NOTHING else. No markdown, no prose.
@@ -167,21 +174,14 @@ def _parse_and_validate(content: str) -> ExtractedTransaction:
 # ---------------------------------------------------------------------------
 def _demo_fallback() -> ExtractedTransaction:
     return ExtractedTransaction(
-        transaction_type="SALE_CREDIT",
-        party_name="Mama Chidi",
-        party_phone=None,
-        items=[
-            {
-                "item_name": "rice",
-                "quantity": 3,
-                "unit_price": 15000,
-                "total_amount": 45000,
-            }
-        ],
-        amount_paid=0,
-        debt_amount=45000,
-        due_date="next week",
-        pidgin_confirmation="I don record am. Mama Chidi owe 45k for 3 bags of rice.",
+        txn_type="credit_sale",
+        amount=45000,
+        item="rice",
+        quantity=3,
+        counterparty="Mama Chidi",
+        note="3 bags of rice on credit",
+        confidence=1.0,
+        pidgin_confirmation="I don record am. Mama Chidi carry 3 bags of rice, 45k, she go pay later.",
     )
 
 
